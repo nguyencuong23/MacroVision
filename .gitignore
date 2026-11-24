@@ -1,0 +1,5 @@
+.github
+.venv
+build
+dist
+*.spec
