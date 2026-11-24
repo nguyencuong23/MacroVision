@@ -34,7 +34,7 @@ def new_condition():
             'sim': .96, 'bright': 0., 'color_sim': 0., 'stable': 250, 'stability_window': 2000, 'release_stable': 500, 'mode': 'Một lần', 'cool': 2000, 'maximum': 10, 'unlimited': False, 'confirm_activation': False, 'actions': []}
 
 def new_action():
-    return {'id': new_id(), 'type': 'Phím', 'order': 1, 'hold': 50, 'key': '1', 'x': 100, 'y': 100, 'repeat': 1, 'interval': 200, 'after_delay': 0, 'mouse_mode': 'Đến tọa độ', 'mouse_api': 'SendInput'}
+    return {'id': new_id(), 'type': 'Phím', 'order': 1, 'hold': 250, 'key': '1', 'x': 100, 'y': 100, 'repeat': 1, 'interval': 200, 'after_delay': 0, 'mouse_mode': 'Đến tọa độ', 'mouse_api': 'SendInput'}
 
 
 def encode_image(img):
@@ -87,11 +87,13 @@ class App(tk.Tk):
         self.engine = None; self.pending = False; self.countdown_token = 0; self.hotkey_states = {'F6': False, 'F7': False, 'F8': False}
         self.preferences = {'condition': {}, 'action': {}}
         self.show_log = False
+        self.anti_detect = False
         self.preferences_error = None; self.preference_store = None
         try:
             self.preference_store = prefs_store.PreferencesStore()
             self.preferences = self.preference_store.load()
             self.show_log = self.preference_store.show_log
+            self.anti_detect = self.preference_store.anti_detect
         except Exception as e:
             self.preferences_error = str(e); self.preference_store = None
         self.form_errors = {}; self.save_job = None; self.selection_guard = False
@@ -112,6 +114,8 @@ class App(tk.Tk):
         self.display_label.pack(side='left')
         self.display_label.bind('<Enter>', lambda e: self.post_display_menu())
         self.display_label.bind('<Button-1>', lambda e: self.post_display_menu())
+        self.anti_detect_var=tk.BooleanVar(value=self.anti_detect)
+        ttk.Checkbutton(top,text='Chế độ chống phát hiện',variable=self.anti_detect_var,command=self.toggle_anti_detect).pack(side='right',padx=8)
         ttk.Separator(self, orient='horizontal').pack(fill='x')
         outer = ttk.Panedwindow(self, orient='horizontal'); outer.pack(fill='both', expand=True, padx=8)
         left = ttk.Frame(outer, padding=5); right = ttk.Frame(outer, padding=8); outer.add(left, weight=2); outer.add(right, weight=3)
@@ -152,6 +156,17 @@ class App(tk.Tk):
     def refresh_display_menu(self):
         self.display_menu.delete(0, 'end')
         self.display_menu.add_command(label='Ẩn nhật ký' if self.show_log else 'Hiển thị nhật ký', command=self.toggle_log)
+    def toggle_anti_detect(self):
+        enabled=self.anti_detect_var.get()
+        if self.preference_store:
+            self.preference_store.anti_detect=enabled
+            try:self.preference_store.save_settings()
+            except Exception as e:
+                self.preference_store.anti_detect=self.anti_detect
+                self.anti_detect_var.set(self.anti_detect)
+                messagebox.showerror('Không thể lưu cài đặt',str(e));return
+        self.anti_detect=enabled
+        self.status.set('Chế độ chống phát hiện ' + ('bật' if enabled else 'tắt') + ' · áp dụng từ lần chạy tiếp theo.')
     def post_display_menu(self):
         self.display_menu.post(self.display_label.winfo_rootx(), self.display_label.winfo_rooty() + self.display_label.winfo_height())
     def toggle_log(self):
@@ -530,6 +545,8 @@ class App(tk.Tk):
             ttk.Button(bar, text='Sửa mặt nạ', command=self.edit_mask).pack(side='left', padx=4)
             if c['region'] is None:
                 text = 'Chưa chọn ảnh'
+            else:
+                text = 'Đã chọn vùng ảnh'
             ttk.Label(self.right, text=text, wraplength=540).pack(anchor='w')
             if c['template'] is not None:
                 image = c['template'].copy()
@@ -575,7 +592,7 @@ class App(tk.Tk):
     def _region_overlay(self, c):
         try:
             mon, screen, over, canvas = self.screenshot_overlay()
-            canvas.create_text(12,12,anchor='nw',text='Kéo chọn vùng nút SẴN SÀNG · Esc hủy',fill='red',font=('Segoe UI',16,'bold'))
+            canvas.create_text(12,12,anchor='nw',text='Kéo chọn vùng · Esc hủy',fill='red',font=('Segoe UI',16,'bold'))
             start=[0,0]; rect=[None]
             def down(e):
                 start[:] = [e.x,e.y]
@@ -681,7 +698,7 @@ class App(tk.Tk):
         if not self.pending or token != self.countdown_token:return
         hwnd=win.foreground(); self.pending=False
         engine_class=once_engine.OnceEngine if script_mode=='Một lần' else engine.Engine
-        self.engine=engine_class(rules,hwnd,False,lambda k,v:self.messages.put((k,v))); self.engine.start(); self.pause_button.config(state='normal', text='Tạm dừng · F7'); self.log('Cửa sổ đích: ' + win.window_title(hwnd)); self.log('Đã bắt đầu. Các chỉnh sửa mới chỉ áp dụng cho lần chạy sau.')
+        self.engine=engine_class(rules,hwnd,False,lambda k,v:self.messages.put((k,v)),self.anti_detect); self.engine.start(); self.pause_button.config(state='normal', text='Tạm dừng · F7'); self.log('Cửa sổ đích: ' + win.window_title(hwnd)); self.log('Đã bắt đầu. Các chỉnh sửa mới chỉ áp dụng cho lần chạy sau.')
     def toggle_pause(self):
         if self.pending:
             self.log('F7 khả dụng sau khi bắt đầu; F8 để dừng.')

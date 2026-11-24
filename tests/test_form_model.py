@@ -11,7 +11,7 @@ class FormModelTests(unittest.TestCase):
     def test_valid_values(self):
         self.assertEqual(form_model.parse_field('action','hold','150'),150)
         self.assertEqual(form_model.parse_field('action','key','f'), 'F')
-        self.assertEqual(form_model.parse_field('condition','sim','0.96'),.96)
+        self.assertEqual(form_model.parse_field('condition', 'sim', '0.9'), 0.9)
     def test_atomic_write(self):
         with tempfile.TemporaryDirectory() as d:
             p=os.path.join(d,'local','session.json')

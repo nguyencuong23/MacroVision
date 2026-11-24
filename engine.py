@@ -2,6 +2,7 @@
 import threading
 import copy
 import time
+import random
 import numpy as np
 import mss
 import vision
@@ -84,7 +85,7 @@ def release_key_chord(slot):
     if first_error is not None:raise first_error
 
 
-def run_group(actions, target, stop, report=lambda message: None, pause=None, action_event=lambda event, action, repeat, timestamp: None):
+def run_group(actions, target, stop, report=lambda message: None, pause=None, action_event=lambda event, action, repeat, timestamp: None, anti_detect=False):
     """Pause prevents new presses; any ongoing hold finishes and is released.
     Resumption does not repeat completed presses; intervals are frozen while paused.
     """
@@ -115,7 +116,9 @@ def run_group(actions, target, stop, report=lambda message: None, pause=None, ac
                     report(f'NHẢ [{diagnostic_time()}] {action_name(a)} · API đã gọi thành công')
                     slot['released_at'] = time.monotonic()
                     if slot['remaining']:
-                        slot['deadline'] = slot['released_at'] + a.get('interval', 200)/1000
+                        interval=a.get('interval', 200)
+                        if anti_detect: interval=max(0,interval+min(20,max(-20,random.gauss(0,6))))
+                        slot['deadline'] = slot['released_at'] + interval/1000
                     else:
                         slot['post_waiting'] = a.get('after_delay', 0) > 0
                         slot['deadline'] = slot['released_at'] + a.get('after_delay', 0)/1000
@@ -144,7 +147,9 @@ def run_group(actions, target, stop, report=lambda message: None, pause=None, ac
                         else:
                             method = win.mouse_down(a['type'], a['x'], a['y'], target, stop, a.get('mouse_mode', 'Đến tọa độ'), a.get('mouse_api', 'SendInput'))
                         slot['held'] = True; slot['remaining'] -= 1
-                        slot['deadline'] = time.monotonic() + a['hold']/1000
+                        hold=a['hold']
+                        if anti_detect: hold=min(5000,max(10,hold+min(20,max(-20,random.gauss(0,6)))))
+                        slot['deadline'] = time.monotonic() + hold/1000
                         action_event('NHẤN',a,a.get('repeat',1)-slot['remaining'],diagnostic_time())
                         report(f'NHẤN [{diagnostic_time()}] {action_name(a)} · giữ {a["hold"]} ms · lần {a.get("repeat",1)-slot["remaining"]}/{a.get("repeat",1)}')
                         if a['type'] != 'Phím' and method != 'SetCursorPos': report(f"  Chuột: {method}.")
@@ -193,8 +198,9 @@ class Engine:
     Wrap after the last condition, never store condition jobs, and do not sample
     conditions while an action chain (including after-delays) is running.
     """
-    def __init__(self, rules, target, dry, output):
+    def __init__(self, rules, target, dry, output, anti_detect=False):
         self.rules, self.target, self.dry, self.output = rules, target, dry, output
+        self.anti_detect=anti_detect
         self.stop_event=threading.Event();self.pause_event=threading.Event();self.pause_started=None;self.lock=threading.Lock()
         self.states=[{'since':None,'window_since':None,'window_phase':None,'last_stable_ms':0,'off_since':None,'armed':True,'next':0.,'last_finished':0.,'count':0} for _ in rules]
         self.action_thread=threading.Thread(target=self.execute,daemon=True)
@@ -218,6 +224,25 @@ class Engine:
                 # Keep the ordered pass position; only restart measurement timers.
                 self.pause_event.clear();self.pause_started=None
     def alive(self):return self.action_thread.is_alive()
+    def wait_human_reaction(self):
+        remaining=random.uniform(0,.020) if self.anti_detect else 0.
+        last=time.monotonic()
+        while remaining>0 and not self.stop_event.is_set():
+            if self.pause_event.is_set():
+                if not wait_unpaused(self.stop_event,self.pause_event):return False
+                last=time.monotonic()
+            foreground=win.foreground()
+            if foreground and foreground!=self.target:
+                self.output('log',f"FOCUS [{diagnostic_time()}] trước thao tác: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
+                return False
+            now=time.monotonic();remaining-=max(0.,now-last);last=now
+            if remaining>0:self.stop_event.wait(min(.02,remaining))
+        if self.stop_event.is_set():return False
+        foreground=win.foreground()
+        if foreground!=self.target:
+            self.output('log',f"FOCUS [{diagnostic_time()}] trước thao tác: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
+            return False
+        return True
     def qualifies(self,s,cond):
         image=np.array(s.grab(cond['region']))[:,:,:3]
         similarity,brightness,color=vision.measure(cond['template'],image,cond['mask'])
@@ -382,7 +407,7 @@ class Engine:
             else:
                 done=run_group([single],self.target,self.stop_event,
                     lambda msg:self.output('log',f"  [{flow_name}/{cond['name']} · nhóm {order} · xác nhận] "+msg),
-                    self.pause_event,lambda event,a,repeat,ts:action_log(event,a,repeat,ts,attempt))
+                    self.pause_event,lambda event,a,repeat,ts:action_log(event,a,repeat,ts,attempt),self.anti_detect)
             if not done:return False
             result=self.wait_confirmation_gap(s,cond,flow_name,150)
             if result=='stopped':return False
@@ -426,11 +451,12 @@ class Engine:
                         continue
                     if self.pause_event.is_set() or self.stop_event.is_set() or win.foreground()!=self.target:
                         self.reset_stability();continue
+                    if not self.wait_human_reaction():continue
                     with self.lock:
                         if self.pause_event.is_set():continue
                         if cond['mode']=='Một lần':state['armed']=False
                     self.log_failures=True;self.logged_skips.clear()
-                    self.output('condition',f"{diagnostic_time()}: {flow_name} / Kích hoạt {cond['name']} (Độ giống: {similarity:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f})")
+                    self.output('condition',f"{diagnostic_time()}: {flow_name} / Kích hoạt {cond['name']} (Độ giống: {similarity:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f}/{cond['bright']:.4f})")
                     self.output('log',f"{'[THỬ] ' if self.dry else ''}Chạy {flow_name} / {cond['name']}.")
                     groups={}
                     for action in cond['actions']:groups.setdefault(action['order'],[]).append(action)
@@ -454,7 +480,7 @@ class Engine:
                             finished=wait_dry_group(actions,self.target,self.stop_event,self.pause_event)
                             if finished:self.output('log',f"  Nhóm {order}: mô phỏng xong, không gửi đầu vào.")
                         else:
-                            finished=run_group(actions,self.target,self.stop_event,lambda msg:self.output('log',f"  [{flow_name}/{cond['name']} · nhóm {order}] "+msg),self.pause_event,action_log)
+                            finished=run_group(actions,self.target,self.stop_event,lambda msg:self.output('log',f"  [{flow_name}/{cond['name']} · nhóm {order}] "+msg),self.pause_event,action_log,self.anti_detect)
                             if finished:
                                 self.output('log',f"  CHẨN ĐOÁN [{diagnostic_time()}] {flow_name}/{cond['name']} nhóm {order}: các lần nhấn, nhả và chờ đã kết thúc.")
                                 if any(a['type']!='Phím' and a.get('mouse_api','SendInput')=='mouse_event' for a in actions):

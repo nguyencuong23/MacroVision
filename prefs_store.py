@@ -29,14 +29,16 @@ class PreferencesStore:
         self.settings_file = self.base / SETTINGS_NAME
         self.directory = self.base
         self.show_log = False
+        self.anti_detect = False
         self.preferences = {'condition': {}, 'action': {}}
         self.recovered_settings = None
         if self.settings_file.exists():
             try:
                 with open(self.settings_file,encoding='utf-8') as f: info=json.load(f)
-                if info.get('kind') != 'MacroVision-settings' or info.get('version') != 1 or not os.path.isabs(info.get('directory',str(self.base))) or not isinstance(info.get('show_log',False), bool):
+                if info.get('kind') != 'MacroVision-settings' or info.get('version') != 1 or not os.path.isabs(info.get('directory',str(self.base))) or not isinstance(info.get('show_log',False), bool) or not isinstance(info.get('anti_detect',False), bool):
                     raise ValueError('File thiết lập không hợp lệ: ' + str(self.settings_file))
                 self.show_log = info.get('show_log', False)
+                self.anti_detect = info.get('anti_detect', False)
                 self.preferences = checked_preferences(info.get('preferences', {'condition': {}, 'action': {}}))
                 old_directory = Path(info.get('directory', self.base))
             except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
@@ -67,4 +69,4 @@ class PreferencesStore:
         self.preferences = checked_preferences(preferences)
         self.save_settings()
     def save_settings(self):
-        form_model.atomic_json(self.settings_file,{'kind':'MacroVision-settings','version':1,'directory':str(self.directory),'show_log':self.show_log,'preferences':self.preferences})
+        form_model.atomic_json(self.settings_file,{'kind':'MacroVision-settings','version':1,'directory':str(self.directory),'show_log':self.show_log,'anti_detect':self.anti_detect,'preferences':self.preferences})

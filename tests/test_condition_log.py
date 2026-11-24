@@ -12,7 +12,7 @@ class ConditionLogTests(unittest.TestCase):
         with patch.object(engine.mss,'mss',return_value=FakeMSS()),patch.object(engine.win,'foreground',return_value=7),patch.object(w,'qualifies',side_effect=qualifies),patch.object(engine.win,'key_down'),patch.object(engine.win,'key_up'):
             w.start();self.assertTrue(done.wait(2));w.stop();w.action_thread.join(1)
         found=[(i,s) for i,(k,s) in enumerate(logs) if k=='condition' and '/ Kích hoạt ' in s];self.assertEqual(len(found),1)
-        i,text=found[0];self.assertRegex(text,r'^\d\d:\d\d:\d\d\.\d{3}: Luồng 3 / Kích hoạt Điều kiện 1 \(Độ giống: 0\.9877, Độ giống màu: 1\.0000/0\.0000, Độ sáng: 0\.5432\)$')
+        i,text=found[0];self.assertRegex(text,r'^\d\d:\d\d:\d\d\.\d{3}: Luồng 3 / Kích hoạt Điều kiện 1 \(Độ giống: 0\.9877, Độ giống màu: 1\.0000/0\.0000, Độ sáng: 0\.5432/0\.0000\)$')
         first_action=next(i for i,(k,_) in enumerate(logs) if k=='action');self.assertLess(i,first_action)
     def test_no_activation_when_recheck_fails(self):
         logs=[];rechecked=threading.Event();n=[0]

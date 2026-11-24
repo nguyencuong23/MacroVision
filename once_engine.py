@@ -24,9 +24,9 @@ def validate(flows):
 
 
 class OnceEngine(engine.Engine):
-    def __init__(self,flow_rules,target,dry,output):
+    def __init__(self,flow_rules,target,dry,output,anti_detect=False):
         self.flow_rules=flow_rules
-        super().__init__([r for flow in flow_rules for r in flow],target,dry,output)
+        super().__init__([r for flow in flow_rules for r in flow],target,dry,output,anti_detect)
         self.log_failures=False
 
     def evaluate(self,s,flow_name,cond):
@@ -74,7 +74,7 @@ class OnceEngine(engine.Engine):
                             if result=='stop':return
                             similarity,brightness,color=values
                             self.log_failures=True
-                            self.output('condition',f"{engine.diagnostic_time()}: {flow_name} / Kích hoạt {cond['name']} (Độ giống: {similarity:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f})")
+                            self.output('condition',f"{engine.diagnostic_time()}: {flow_name} / Kích hoạt {cond['name']} (Độ giống: {similarity:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f}/{cond['bright']:.4f})")
                             self.output('log',f"Chạy {flow_name} / {cond['name']}.")
                             finished=self.run_chain(s,flow_name,cond)
                             if not finished:
@@ -93,6 +93,7 @@ class OnceEngine(engine.Engine):
         finally:self.output('thread_done','Theo dõi và thao tác đã dừng.')
 
     def run_chain(self,s,flow_name,cond):
+        if not self.wait_human_reaction():return False
         groups={}
         for action in cond['actions']:groups.setdefault(action['order'],[]).append(action)
         def action_log(event,action,repeat,timestamp,confirm_attempt=None):
@@ -115,7 +116,7 @@ class OnceEngine(engine.Engine):
                 finished=engine.wait_dry_group(actions,self.target,self.stop_event,self.pause_event)
                 if finished:self.output('log',f"  Nhóm {order}: mô phỏng xong, không gửi đầu vào.")
             else:
-                finished=engine.run_group(actions,self.target,self.stop_event,lambda msg:self.output('log',f"  [{flow_name}/{cond['name']} · nhóm {order}] "+msg),self.pause_event,action_log)
+                finished=engine.run_group(actions,self.target,self.stop_event,lambda msg:self.output('log',f"  [{flow_name}/{cond['name']} · nhóm {order}] "+msg),self.pause_event,action_log,self.anti_detect)
                 if finished:
                     self.output('log',f"  CHẨN ĐOÁN [{engine.diagnostic_time()}] {flow_name}/{cond['name']} nhóm {order}: các lần nhấn, nhả và chờ đã kết thúc.")
                     if any(a['type']!='Phím' and a.get('mouse_api','SendInput')=='mouse_event' for a in actions):
