@@ -644,10 +644,23 @@ class App(tk.Tk):
     def _markers(self,c,actions):
         try:
             mon, screen, over, canvas=self.screenshot_overlay()
-            canvas.create_rectangle(0,0,mon['width'],40,fill='#151b25',outline='')
-            canvas.create_text(12,20,anchor='w',text='Kéo các số tới vị trí nhấn · Enter: lưu · Esc: hủy',fill='white',font=('Segoe UI',14,'bold'))
+            hint='Kéo nút hoặc nhấn vào vị trí cần · Enter: lưu · Esc: hủy'
+            hint_panel=tk.Canvas(over,bg='#111111',highlightthickness=0,bd=0,cursor='hand2')
+            label=hint_panel.create_text(12,12,text=hint,fill='white',font=('Segoe UI',14,'bold'),anchor='w')
+            bounds=hint_panel.bbox(label); width=bounds[2]-bounds[0]+24; height=bounds[3]-bounds[1]+18
+            x=y=0; right,bottom=width,height; radius=6
+            points=tuple((cx+radius*math.cos(a),cy+radius*math.sin(a)) for cx,cy,start_angle in ((right-radius,y+radius,-math.pi/2),(right-radius,bottom-radius,0),(x+radius,bottom-radius,math.pi/2),(x+radius,y+radius,math.pi)) for a in (start_angle+i*math.pi/16 for i in range(9)))
+            hint_panel.create_polygon(*(v for point in points for v in point),fill='#111111',outline='white',width=2)
+            hint_panel.coords(label,12,height/2); hint_panel.tag_raise(label)
+            hint_panel.configure(width=width,height=height); hint_panel.place(x=12,y=12)
+            hint_drag=[0,0,12,12]
+            def drag_hint(e):
+                hint_drag[2:]=[hint_drag[2]+e.x_root-hint_drag[0],hint_drag[3]+e.y_root-hint_drag[1]]
+                hint_drag[:2]=[e.x_root,e.y_root]; hint_panel.place(x=hint_drag[2],y=hint_drag[3])
+            def start_hint_drag(e): hint_drag[:2]=[e.x_root,e.y_root]
+            hint_panel.bind('<ButtonPress-1>',start_hint_drag); hint_panel.bind('<B1-Motion>',drag_hint)
             selected_id = self.selected[3]['id'] if self.selected and self.selected[0] == 'action' else c['id']
-            markers={}; originals={a['id']:(a['x'],a['y']) for a in actions}; active=[None]; last_dragged=[None]
+            markers={}; originals={a['id']:(a['x'],a['y']) for a in actions}; active=[None]; chosen=[None]; last_dragged=[None]
             for index,a in enumerate(actions):
                 x=max(20,min(mon['width']-20,a['x']-mon['left'])); y=max(60,min(mon['height']-20,a['y']-mon['top']))
                 # Separate default overlapping markers so each can be grabbed.
@@ -656,21 +669,30 @@ class App(tk.Tk):
                 canvas.create_oval(x-17,y-17,x+17,y+17,fill='#ffae00',outline='#111',width=2,tags=(tag,))
                 canvas.create_text(x,y,text=str(a['order']),fill='black',font=('Segoe UI',12,'bold'),tags=(tag,))
                 markers[tag]={'action':a,'x':x,'y':y}
-                def select(e,t=tag): active[0]=t
+                def select(e,t=tag): active[0]=chosen[0]=t
                 canvas.tag_bind(tag,'<ButtonPress-1>',select)
+            def click(e):
+                tag=next((t for t in markers if t in canvas.gettags('current')),None)
+                if tag:
+                    chosen[0]=active[0]=tag
+                    return
+                if chosen[0]:
+                    m=markers[chosen[0]]; x=max(0,min(mon['width']-1,e.x)); y=max(0,min(mon['height']-1,e.y))
+                    canvas.move(chosen[0],x-m['x'],y-m['y']); m['x']=x; m['y']=y; last_dragged[0]=chosen[0]
             def drag(e):
                 tag=active[0]
                 if not tag:return
                 m=markers[tag]; last_dragged[0]=tag; x=max(0,min(mon['width']-1,e.x)); y=max(0,min(mon['height']-1,e.y))
                 canvas.move(tag,x-m['x'],y-m['y']); m['x']=x; m['y']=y
-            canvas.bind('<B1-Motion>',drag); canvas.bind('<ButtonRelease-1>',lambda e:active.__setitem__(0,None))
+            canvas.bind('<ButtonPress-1>',click); canvas.bind('<B1-Motion>',drag); canvas.bind('<ButtonRelease-1>',lambda e:active.__setitem__(0,None))
             def finish(save):
                 if save:
                     for m in markers.values(): m['action']['x']=int(m['x']+mon['left']); m['action']['y']=int(m['y']+mon['top'])
                     if last_dragged[0]:
                         chosen=markers[last_dragged[0]]['action']; self.preferences['action'].update(x=chosen['x'],y=chosen['y']); self.schedule_preferences_save()
                 over.destroy(); self.deiconify(); self.lift(); self.refresh_tree(selected_id)
-            over.bind('<Return>',lambda e:finish(True)); over.bind('<Escape>',lambda e:finish(False)); over.focus_force()
+            over.bind('<Return>',lambda e:finish(True)); over.bind('<Escape>',lambda e:finish(False))
+            hint_panel.bind('<Return>',lambda e:finish(True)); hint_panel.bind('<Escape>',lambda e:finish(False)); over.focus_force()
         except Exception as e: self.deiconify(); messagebox.showerror('Đặt điểm chuột',str(e))
     def new_script(self):
         if self.pending or self.engine and self.engine.alive():
