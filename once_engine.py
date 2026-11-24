@@ -57,7 +57,7 @@ class OnceEngine(engine.Engine):
                     if self.pause_event.is_set() or win.foreground()!=self.target:
                         since=None;continue
                     if not good:
-                        if self.log_failures:self.output('condition',f"{engine.diagnostic_time()}: {flow_name} / {cond['name']}: Kiểm tra lại không đạt, tiếp tục chờ (Độ giống: {sim:.4f}/{cond['sim']:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {bright:.4f}/{cond['bright']:.4f})")
+                        if self.log_failures:self.output('condition',f"{engine.diagnostic_time()}: {flow_name} / {cond['name']}: Kiểm tra lại không đạt — tiếp tục chờ (Độ giống: {sim:.4f}/{cond['sim']:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {bright:.4f}/{cond['bright']:.4f})")
                         self.log_failures=False;since=None
                     else:return 'ready',(sim,bright,color)
             self.stop_event.wait(.1)
@@ -80,7 +80,7 @@ class OnceEngine(engine.Engine):
                             if not finished:
                                 self.output('log','Chuỗi bị ngắt: dừng mode Một lần để tránh chạy lại các thao tác đã thực hiện.')
                                 return
-                            self.output('log',f"Hoàn thành {flow_name} / {cond['name']}; xét tiếp điều kiện kế tiếp.")
+                            self.output('log',f"Hoàn thành {flow_name} / {cond['name']}; tiếp tục xét script.")
                             break
                         if self.stop_event.is_set():return
                     step="chuyển luồng tiếp theo" if flow_index+1<len(self.flow_rules) else "đã đến luồng cuối"
@@ -105,7 +105,7 @@ class OnceEngine(engine.Engine):
                 finished=False;break
             foreground=win.foreground()
             if foreground!=self.target:
-                self.output('log',f"FOCUS [{engine.diagnostic_time()}] {flow_name}/{cond['name']} trước nhóm {order}: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
+                self.output('log',f"FOCUS [{engine.diagnostic_time()}] {flow_name}/{cond['name']} · trước nhóm {order}: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
                 finished=False;break
             actions=groups[order]
             self.output('log',f"  Bắt đầu nhóm {order}: " + ', '.join((a['key'] if a['type']=='Phím' else (f"{a['type']} tại con trỏ hiện tại [{a.get('mouse_api','SendInput')}]" if a.get('mouse_mode')=='Nhấn tại con trỏ hiện tại' else f"{a['type']} ({a['x']},{a['y']})")) + f" ×{a.get('repeat',1)}" + (f" · chờ sau {a.get('after_delay',0)} ms" if a.get('after_delay',0) else '') for a in actions))

@@ -8,7 +8,7 @@ import windows_input as win
 import keyboard_keys
 
 CONDITION_DEFAULT_FIELDS = ('sim','bright','color_sim','stable','stability_window','release_stable','mode','cool','maximum','unlimited','confirm_activation')
-ACTION_DEFAULT_FIELDS = ('type','key','x','y','hold','repeat','interval','after_delay','mouse_mode','mouse_api')
+ACTION_DEFAULT_FIELDS = ('type','key','x','y','hold','repeat','interval','after_delay','mouse_mode')
 MOUSE_MODES = ('Đến tọa độ', 'Nhấn tại con trỏ hiện tại', 'Tọa độ; nếu lỗi nhấn tại chỗ')
 
 def parse_field(kind, key, raw):
@@ -40,8 +40,6 @@ def parse_field(kind, key, raw):
         if text not in ('Một lần','Lặp'): raise ValueError('Chế độ không hợp lệ.')
     elif key=='type':
         if text not in ('Phím','Chuột trái','Chuột phải'): raise ValueError('Loại thao tác không hợp lệ.')
-    elif key=='mouse_api':
-        if text not in ('SendInput','mouse_event'): raise ValueError('API chuột không hợp lệ.')
     elif key=='mouse_mode':
         if text not in MOUSE_MODES: raise ValueError('Chế độ chuột không hợp lệ.')
     elif key=='key':

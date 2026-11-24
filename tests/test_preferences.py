@@ -29,3 +29,4 @@ class PreferencesTests(unittest.TestCase):
             store.relocate(other,{'condition':{'stable':600},'action':{'hold':500}})
             another=prefs_store.PreferencesStore(base);self.assertEqual(another.path,other/prefs_store.DEFAULT_NAME)
             self.assertEqual(another.load()['action']['hold'],500)
+            self.assertEqual(json.loads((base/'settings.json').read_text(encoding='utf8'))['directory'],str(other))

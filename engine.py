@@ -97,7 +97,7 @@ def run_group(actions, target, stop, report=lambda message: None, pause=None, ac
             if stop.is_set(): return False
             foreground=win.foreground();focused = foreground == target
             if not focused and (not pause.is_set() or any(slot['held'] for slot in schedule)):
-                report(f'FOCUS [{diagnostic_time()}] mục tiêu: {win.describe_window(target)} | phía trước: {win.describe_window(foreground)}');return False
+                report(f'FOCUS [{diagnostic_time()}] đang gửi thao tác: mục tiêu {win.describe_window(target)} | phía trước {win.describe_window(foreground)}');return False
             now = time.monotonic()
             if pause.is_set() and pause_started is None: pause_started = now
             elif not pause.is_set() and pause_started is not None:
@@ -127,7 +127,7 @@ def run_group(actions, target, stop, report=lambda message: None, pause=None, ac
                     if stop.is_set(): return False
                     foreground=win.foreground()
                     if foreground != target:
-                        report(f'FOCUS [{diagnostic_time()}] mục tiêu: {win.describe_window(target)} | phía trước: {win.describe_window(foreground)}');return False
+                        report(f'FOCUS [{diagnostic_time()}] đang gửi thao tác: mục tiêu {win.describe_window(target)} | phía trước {win.describe_window(foreground)}');return False
                     if pause.is_set(): break
                     if not slot['held'] and slot['remaining'] and time.monotonic() >= slot['deadline']:
                         a = slot['action']
@@ -138,7 +138,7 @@ def run_group(actions, target, stop, report=lambda message: None, pause=None, ac
                                 if key_index:
                                     foreground=win.foreground()
                                     if foreground!=target:
-                                        report(f'FOCUS [{diagnostic_time()}] mục tiêu: {win.describe_window(target)} | phía trước: {win.describe_window(foreground)}');return False
+                                        report(f'FOCUS [{diagnostic_time()}] đang gửi thao tác: mục tiêu {win.describe_window(target)} | phía trước {win.describe_window(foreground)}');return False
                                 # Include the attempted key in emergency release even if SendInput fails.
                                 slot['value'].append(code);win.key_down(code)
                         else:
@@ -339,13 +339,14 @@ class Engine:
                 last=time.monotonic()
             foreground=win.foreground()
             if foreground!=self.target:
-                self.output('log',f"FOCUS [{diagnostic_time()}] xác nhận {flow_name}/{cond['name']}: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
+                self.output('log',f"FOCUS [{diagnostic_time()}] {flow_name}/{cond['name']} · đang xác nhận: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
                 return 'stopped'
             good,similarity,brightness,color=self.qualifies(s,cond)
             if self.stop_event.is_set():return 'stopped'
             if self.pause_event.is_set():continue
-            if win.foreground()!=self.target:
-                self.output('log',f"FOCUS [{diagnostic_time()}] mất cửa sổ đích khi đang xác nhận {flow_name}/{cond['name']}.")
+            foreground=win.foreground()
+            if foreground!=self.target:
+                self.output('log',f"FOCUS [{diagnostic_time()}] {flow_name}/{cond['name']} · đang xác nhận: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
                 return 'stopped'
             if not good:
                 self.output('condition',f"{diagnostic_time()}: {flow_name} / {cond['name']}: Xác nhận dấu hiệu không còn đạt (Độ giống: {similarity:.4f}/{cond['sim']:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f}/{cond['bright']:.4f})")
@@ -363,7 +364,7 @@ class Engine:
                 last=time.monotonic()
             foreground=win.foreground()
             if foreground!=self.target:
-                self.output('log',f"FOCUS [{diagnostic_time()}] chờ sau xác nhận {flow_name}/{cond['name']}: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
+                self.output('log',f"FOCUS [{diagnostic_time()}] {flow_name}/{cond['name']} · chờ sau xác nhận: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
                 return False
             now=time.monotonic();remaining-=max(0.,now-last);last=now
             if remaining>0:self.stop_event.wait(min(.025,remaining))
@@ -415,7 +416,7 @@ class Engine:
                         if brightness < cond['bright']: reasons.append(f"độ sáng dưới ngưỡng {cond['bright']:.4f}")
                         if not reasons: reasons.append('không đạt kiểm tra nhận diện')
                         if self.log_failures and idx not in self.logged_skips:
-                            self.output('condition',f"{diagnostic_time()}: {flow_name} / {cond['name']}: Bỏ qua (kiểm tra lại không đạt: {'; '.join(reasons)}; Độ ổn định: {state['last_stable_ms']}/{cond.get('stability_window',max(2000,cond['stable']+500))}, Độ giống: {similarity:.4f}/{cond['sim']:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f}/{cond['bright']:.4f})")
+                            self.output('condition',f"{diagnostic_time()}: {flow_name} / {cond['name']}: Kiểm tra lại không đạt — bỏ qua ({'; '.join(reasons)}; Độ ổn định: {state['last_stable_ms']}/{cond.get('stability_window',max(2000,cond['stable']+500))}, Độ giống: {similarity:.4f}/{cond['sim']:.4f}, Độ giống màu: {color:.4f}/{cond.get('color_sim',0.):.4f}, Độ sáng: {brightness:.4f}/{cond['bright']:.4f})")
                             self.logged_skips.add(idx)
                         self.output('log',f"CHẨN ĐOÁN [{diagnostic_time()}] bỏ chọn {flow_name}/{cond['name']}: điều kiện không còn đạt khi kiểm tra lại trước chạy.")
                         with self.lock:
@@ -443,7 +444,7 @@ class Engine:
                             finished=False;break
                         foreground=win.foreground()
                         if foreground!=self.target:
-                            self.output('log',f"FOCUS [{diagnostic_time()}] {flow_name}/{cond['name']} trước nhóm {order}: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
+                            self.output('log',f"FOCUS [{diagnostic_time()}] {flow_name}/{cond['name']} · trước nhóm {order}: mục tiêu {win.describe_window(self.target)} | phía trước {win.describe_window(foreground)}")
                             finished=False;break
                         actions=groups[order]
                         self.output('log',f"  Bắt đầu nhóm {order}: " + ', '.join((a['key'] if a['type']=='Phím' else (f"{a['type']} tại con trỏ hiện tại [{a.get('mouse_api','SendInput')}]" if a.get('mouse_mode')=='Nhấn tại con trỏ hiện tại' else f"{a['type']} ({a['x']},{a['y']})")) + f" ×{a.get('repeat',1)}" + (f" · chờ sau {a.get('after_delay',0)} ms" if a.get('after_delay',0) else '') for a in actions))
@@ -468,8 +469,7 @@ class Engine:
                         state['next']=state['last_finished']+cond['cool']/1000
                         if finished:state['count']+=1
                     if finished:
-                        next_step='đã hết lượt, xét lại từ đầu' if idx+1==len(self.rules) else 'xét tiếp điều kiện kế tiếp'
-                        self.output('log',f"Hoàn thành {flow_name} / {cond['name']}; {next_step}.")
+                        self.output('log',f"Hoàn thành {flow_name} / {cond['name']}; tiếp tục xét script.")
                     else:
                         reason='đã yêu cầu dừng' if self.stop_event.is_set() else 'mất cửa sổ đích hoặc lỗi an toàn khác; xem dòng FOCUS nếu có'
                         self.output('log',f'  Chuỗi bị ngắt: {reason}; đã cố nhả các nút đang giữ.')

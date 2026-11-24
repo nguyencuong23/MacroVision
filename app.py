@@ -74,33 +74,48 @@ class App(tk.Tk):
     def __init__(self, prompt_on_start=True):
         super().__init__()
         self.title('Macro Vision'); self.geometry('1100x760'); self.minsize(940, 650)
+        self.update_idletasks()
+        self.geometry(f'+{(self.winfo_screenwidth() - 1100) // 2}+{(self.winfo_screenheight() - 760) // 2}')
         self.script_mode='Lặp lại'
         self.flows = []; self.item_map = {}; self.selected = None; self.vars = {}; self.messages = queue.Queue()
         self.key_capture_focused = False
         self.engine = None; self.pending = False; self.countdown_token = 0; self.hotkey_states = {'F6': False, 'F7': False, 'F8': False}
         self.preferences = {'condition': {}, 'action': {}}
+        self.show_log = False
         self.preferences_error = None; self.preference_store = None
         try:
             self.preference_store = prefs_store.PreferencesStore()
             self.preferences = self.preference_store.load()
+            self.show_log = self.preference_store.show_log
         except Exception as e:
             self.preferences_error = str(e); self.preference_store = None
         self.form_errors = {}; self.save_job = None; self.selection_guard = False
         self.session_path = None; self.dirty = False
         self.autosave_status = tk.StringVar(value='')
         self.protocol('WM_DELETE_WINDOW', self.close)
-        top = ttk.Frame(self, padding=8); top.pack(fill='x')
-        ttk.Label(top, text='Macro Vision', font=('Segoe UI', 14, 'bold')).pack(side='left')
-        ttk.Button(top, text='Script mới', command=self.new_script).pack(side='right', padx=3)
-        ttk.Button(top, text='Lưu script', command=self.save_script).pack(side='right', padx=3)
-        ttk.Button(top, text='Mở script', command=self.load_script).pack(side='right', padx=3)
+        top = ttk.Frame(self, padding=(0, 0)); top.pack(fill='x')
+        script_menu = tk.Menu(self, tearoff=False)
+        script_menu.add_command(label='Mới', command=self.new_script)
+        script_menu.add_command(label='Mở', command=self.load_script)
+        script_menu.add_command(label='Lưu', command=self.save_script)
+        script_label = ttk.Label(top, text='Script', padding=(8, 6), cursor='hand2')
+        script_label.pack(side='left')
+        script_label.bind('<Enter>', lambda e: script_menu.post(script_label.winfo_rootx(), script_label.winfo_rooty() + script_label.winfo_height()))
+        script_label.bind('<Button-1>', lambda e: script_menu.post(script_label.winfo_rootx(), script_label.winfo_rooty() + script_label.winfo_height()))
+        self.display_menu = tk.Menu(self, tearoff=False)
+        self.display_label = ttk.Label(top, text='Hiển thị', padding=(8, 6), cursor='hand2')
+        self.display_label.pack(side='left')
+        self.display_label.bind('<Enter>', lambda e: self.post_display_menu())
+        self.display_label.bind('<Button-1>', lambda e: self.post_display_menu())
+        ttk.Button(top, text='Cài đặt', command=self.show_settings).pack(side='right')
+        ttk.Separator(self, orient='horizontal').pack(fill='x')
         outer = ttk.Panedwindow(self, orient='horizontal'); outer.pack(fill='both', expand=True, padx=8)
         left = ttk.Frame(outer, padding=5); right = ttk.Frame(outer, padding=8); outer.add(left, weight=2); outer.add(right, weight=3)
         tree_head=ttk.Frame(left);tree_head.pack(fill='x')
         ttk.Label(tree_head, text='Cấu trúc script').pack(side='left')
         self.script_mode_var=tk.StringVar(value=self.script_mode)
         self.script_mode_box=ttk.Combobox(tree_head,textvariable=self.script_mode_var,values=('Lặp lại','Một lần'),state='readonly',width=12)
-        self.script_mode_box.pack(side='right');ttk.Label(tree_head,text='Mode script:').pack(side='right',padx=(4,4))
+        self.script_mode_box.pack(side='right');ttk.Label(tree_head,text='Mode:').pack(side='right',padx=(4,4))
         self.script_mode_box.bind('<<ComboboxSelected>>',self.change_script_mode)
         self.tree = ttk.Treeview(left, show='tree', selectmode='browse'); self.tree.pack(fill='both', expand=True, pady=4)
         self.tree.bind('<<TreeviewSelect>>', self.select)
@@ -116,20 +131,36 @@ class App(tk.Tk):
         self.right = right; self.render_panel()
         bottom = ttk.Frame(self, padding=8); bottom.pack(fill='x')
         self.start_button = ttk.Button(bottom, text='Bắt đầu · F6', command=self.start); self.start_button.pack(side='left', padx=(0,8))
+        self.pause_button = ttk.Button(bottom, text='Tạm dừng · F7', command=self.toggle_pause, state='disabled'); self.pause_button.pack(side='left', padx=(0,8))
         ttk.Button(bottom, text='Dừng · F8', command=self.stop).pack(side='left')
-        ttk.Button(bottom, text='Vị trí lưu thiết lập…', command=self.choose_preferences_directory).pack(side='left', padx=8)
         self.status = tk.StringVar(value='F6 bắt đầu · F7 tạm dừng/tiếp tục · F8 dừng hẳn.')
-        ttk.Label(self, textvariable=self.status, wraplength=1050).pack(anchor='w', padx=12)
-        ttk.Label(self, textvariable=self.autosave_status, foreground='#345b85', wraplength=1050).pack(anchor='w', padx=12)
-        log_head = ttk.Frame(self); log_head.pack(fill='x', padx=12)
+        self.log_panel = ttk.Frame(self, padding=(12, 0))
+        log_head = ttk.Frame(self.log_panel); log_head.pack(fill='x')
         ttk.Label(log_head, text='Nhật ký').pack(side='left')
-        self.detailed_log = tk.BooleanVar(value=False)
-        ttk.Checkbutton(log_head, text='Hiện chẩn đoán chi tiết', variable=self.detailed_log).pack(side='right')
-        self.logbox = tk.Text(self, height=6, wrap='word', state='disabled'); self.logbox.pack(fill='x', padx=10, pady=(0,8))
+        self.logbox = tk.Text(self.log_panel, height=6, wrap='word', state='disabled'); self.logbox.pack(fill='x', pady=(0,8))
+        if self.show_log: self.log_panel.pack(fill='x')
+        self.refresh_display_menu()
         self.tick_job = self.after(30, self.tick)
         self.update_storage_status()
         if self.preferences_error: self.log('LỖI THIẾT LẬP: ' + self.preferences_error)
 
+    def refresh_display_menu(self):
+        self.display_menu.delete(0, 'end')
+        self.display_menu.add_command(label='Ẩn nhật ký' if self.show_log else 'Hiển thị nhật ký', command=self.toggle_log)
+    def post_display_menu(self):
+        self.display_menu.post(self.display_label.winfo_rootx(), self.display_label.winfo_rooty() + self.display_label.winfo_height())
+    def toggle_log(self):
+        show = not self.show_log
+        if self.preference_store:
+            self.preference_store.show_log = show
+            try: self.preference_store.save_settings()
+            except Exception as e:
+                self.preference_store.show_log = self.show_log
+                messagebox.showerror('Không thể lưu cài đặt', str(e)); return
+        self.show_log = show
+        if show: self.log_panel.pack(fill='x')
+        else: self.log_panel.pack_forget()
+        self.refresh_display_menu()
     def log(self, msg):
         self.logbox.config(state='normal'); self.logbox.insert('end', time.strftime('%H:%M:%S ') + msg + '\n'); self.logbox.see('end'); self.logbox.config(state='disabled')
     def log_action(self, msg):
@@ -154,17 +185,30 @@ class App(tk.Tk):
             self.preference_store.save(self.preferences); self.preferences_error = None; self.update_storage_status(); return True
         except Exception as e:
             self.preferences_error = str(e); self.update_storage_status(); self.log('LỖI LƯU THIẾT LẬP: ' + str(e)); return False
-    def choose_preferences_directory(self):
-        directory = filedialog.askdirectory(title='Chọn thư mục tự lưu thiết lập mặc định')
+    def show_settings(self):
+        window = tk.Toplevel(self); window.title('Cài đặt'); window.transient(self); window.resizable(False, False)
+        body = ttk.Frame(window, padding=12); body.pack(fill='x')
+        ttk.Label(body, text='Vị trí lưu thiết lập').grid(row=0, column=0, sticky='w', padx=(0, 8))
+        path = tk.StringVar(value=str(self.preference_store.path if self.preference_store else prefs_store.application_dir() / prefs_store.DEFAULT_NAME))
+        ttk.Entry(body, textvariable=path, width=58, state='readonly').grid(row=0, column=1, sticky='ew')
+        ttk.Button(body, text='Duyệt', command=lambda: self.choose_preferences_directory(path)).grid(row=0, column=2, padx=(8, 0))
+        window.update_idletasks()
+        x = (window.winfo_screenwidth() - window.winfo_width()) // 2
+        y = (window.winfo_screenheight() - window.winfo_height()) // 2
+        window.geometry(f'+{x}+{y}')
+    def choose_preferences_directory(self, path_var=None):
+        current = self.preference_store.directory if self.preference_store else prefs_store.application_dir()
+        directory = filedialog.askdirectory(title='Chọn thư mục tự lưu thiết lập mặc định', initialdir=str(current))
         if not directory: return
         try:
             store = self.preference_store or prefs_store.PreferencesStore.__new__(prefs_store.PreferencesStore)
             if self.preference_store is None:
-                store.base = prefs_store.application_dir(); store.location_file = store.base / prefs_store.LOCATION_NAME; store.directory = store.base
+                store.base = prefs_store.application_dir(); store.settings_file = store.base / prefs_store.SETTINGS_NAME; store.directory = store.base; store.show_log = self.show_log
             target = os.path.join(directory, prefs_store.DEFAULT_NAME)
             if os.path.exists(target) and os.path.normcase(os.path.abspath(target)) != os.path.normcase(os.path.abspath(store.path)):
                 if not messagebox.askyesno('Thiết lập đã tồn tại', 'File thiết lập trong thư mục này đã tồn tại. Thay bằng thiết lập hiện tại?'): return
             self.cancel_pending_save(); store.relocate(directory, self.preferences); self.preference_store = store
+            if path_var: path_var.set(str(store.path))
             self.preferences_error = None; self.update_storage_status(); self.log('Đã đổi thư mục lưu thiết lập: ' + str(store.path))
         except Exception as e:
             self.preferences_error = str(e); self.update_storage_status(); messagebox.showerror('Không thể đổi vị trí thiết lập',str(e))
@@ -179,7 +223,7 @@ class App(tk.Tk):
             self.script_mode_var.set(self.script_mode);return
         if requested==self.script_mode:return
         self.script_mode=requested;self.schedule_save();self.render_panel()
-        self.status.set('Mode script: '+requested+' · thay đổi áp dụng từ lần chạy tiếp theo.')
+        self.status.set('Mode: '+requested+' · thay đổi áp dụng từ lần chạy tiếp theo.')
     def prepare_switch(self):
         if self.dirty:
             return messagebox.askyesno('Chưa lưu script', 'Script có thay đổi chưa lưu. Bỏ các thay đổi và tiếp tục?')
@@ -202,7 +246,7 @@ class App(tk.Tk):
         kind = self.vars['type'].get()
         mode = self.vars['mouse_mode'].get()
         if key == 'key': return kind == 'Phím'
-        if key in ('mouse_mode','mouse_api'): return kind != 'Phím'
+        if key == 'mouse_mode': return kind != 'Phím'
         if key in ('x','y'): return kind != 'Phím' and mode != 'Nhấn tại con trỏ hiện tại'
         return True
     def refresh_errors(self):
@@ -498,7 +542,6 @@ class App(tk.Tk):
             action_type_widget = self.field(form, 'Loại thao tác', 'type', a['type'], ('Phím', 'Chuột trái', 'Chuột phải'))
             mouse_mode_widget = self.field(form, 'Vị trí chuột', 'mouse_mode', a.get('mouse_mode', 'Đến tọa độ'), ('Đến tọa độ', 'Nhấn tại con trỏ hiện tại', 'Tọa độ; nếu lỗi nhấn tại chỗ'))
             mouse_mode_widget.config(width=35)
-            self.field(form, 'Cách gửi chuột', 'mouse_api', a.get('mouse_api', 'SendInput'), ('SendInput', 'mouse_event'))
             for label, key in [('Bấm phím để chọn','key'), ('Tọa độ chuột X','x'), ('Tọa độ chuột Y','y'), ('Thời gian nhấn giữ (ms)','hold'), ('Số lần lặp thao tác','repeat'), ('Nghỉ giữa các lần (ms)','interval'), ('Chờ sau thao tác (ms)','after_delay')]:
                 self.field(form, label, key, a.get(key, 1 if key == 'repeat' else 200 if key == 'interval' else 0 if key == 'after_delay' else ''))
         for key, var in self.vars.items():
@@ -507,7 +550,8 @@ class App(tk.Tk):
             bar = ttk.Frame(self.right); bar.pack(anchor='w', pady=8)
             ttk.Button(bar, text='Chụp và chọn vùng', command=self.capture_region).pack(side='left', padx=(0,4))
             ttk.Button(bar, text='Sửa mặt nạ', command=self.edit_mask).pack(side='left', padx=4)
-            text = 'Chưa chọn ảnh' if c['region'] is None else f"Vùng: {c['region']} · pixel mặt nạ: {int(np.count_nonzero(c['mask'])) if c['mask'] is not None else 0}"
+            if c['region'] is None:
+                text = 'Chưa chọn ảnh'
             ttk.Label(self.right, text=text, wraplength=540).pack(anchor='w')
             if c['template'] is not None:
                 image = c['template'].copy()
@@ -518,14 +562,13 @@ class App(tk.Tk):
                 ttk.Label(self.right, image=self.preview).pack(anchor='w', pady=8)
             if self.script_mode=='Lặp lại': ttk.Label(self.right, text='Một lần: cần không đạt ổn định rồi đạt lại. Lặp: chạy tiếp sau khoảng nghỉ.').pack(anchor='w')
         if kind == 'action':
-            ttk.Label(self.right, text='Ô phím: bấm trực tiếp từng phím; các phím trong ô được nhấn gần đồng thời. Backspace xóa phím trước con trỏ.\nF6–F8 không hoạt động khi đang chọn ô phím; rời ô để dùng phím tắt.\nCùng số: nhấn gần đồng thời; nhóm sau đợi mọi thao tác nhả và hết thời gian chờ. Mỗi nhóm chỉ có một thao tác chuột.', wraplength=540).pack(anchor='w', pady=8)
             marker_button = ttk.Button(self.right, text='Đặt/kéo điểm chuột', command=self.marker_overlay)
             marker_button.pack(anchor='w')
             def update_type(_=None):
                 is_key = self.vars['type'].get() == 'Phím'
                 at_current = self.vars['mouse_mode'].get() == 'Nhấn tại con trỏ hiện tại'
-                for field_name in ('key', 'mouse_mode', 'mouse_api', 'x', 'y'):
-                    visible = is_key if field_name == 'key' else (not is_key if field_name in ('mouse_mode','mouse_api') else not is_key and not at_current)
+                for field_name in ('key', 'mouse_mode', 'x', 'y'):
+                    visible = is_key if field_name == 'key' else (not is_key if field_name == 'mouse_mode' else not is_key and not at_current)
                     for widget in self.field_widgets[field_name]:
                         if visible: widget.grid()
                         else: widget.grid_remove()
@@ -626,13 +669,14 @@ class App(tk.Tk):
         self.status.set('Script mới. Lưu script khi bạn muốn.'); self.log('Đã tạo script mới.')
     def save_script(self):
         if not self.ensure_valid(): return
-        path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('Script Macro Vision','*.json')], title='Lưu script')
-        if not path: return
-        reserved=[prefs_store.application_dir() / prefs_store.LOCATION_NAME]
+        path = self.session_path
+        if path is None:
+            path = filedialog.asksaveasfilename(defaultextension='.json', filetypes=[('Script Macro Vision','*.json')], title='Lưu script')
+            if not path: return
+        reserved=[prefs_store.application_dir() / prefs_store.SETTINGS_NAME]
         if self.preference_store: reserved.append(self.preference_store.path)
         if any(os.path.normcase(os.path.abspath(path)) == os.path.normcase(os.path.abspath(p)) for p in reserved):
             messagebox.showerror('Không thể lưu','Đây là file thiết lập của ứng dụng. Hãy chọn file script khác.'); return
-        if os.path.exists(path) and not messagebox.askyesno('Xác nhận ghi đè','Ghi đè script đã tồn tại?\n\n'+path): return
         try:
             form_model.atomic_json(path,self.script_payload()); self.session_path=path; self.dirty=False; self.log('Đã lưu script: '+path)
         except Exception as e: messagebox.showerror('Không thể lưu script',str(e))
@@ -653,15 +697,13 @@ class App(tk.Tk):
         try:
             snapshot=copy.deepcopy(self.flows); rules=once_engine.validate(snapshot) if self.script_mode=='Một lần' else engine.validate(snapshot)
         except Exception as e: messagebox.showerror('Chưa thể chạy',str(e)); return
-        self.pending=True; self.countdown_token += 1; token = self.countdown_token; self.start_button.config(state='disabled')
+        self.pending=True; self.countdown_token += 1; token = self.countdown_token; self.start_button.config(state='disabled'); self.pause_button.config(state='disabled')
         self.begin(rules,token,self.script_mode)
     def begin(self,rules,token,script_mode='Lặp lại'):
         if not self.pending or token != self.countdown_token:return
         hwnd=win.foreground(); self.pending=False
-        if not win.foreground_is_other_process(hwnd):
-            self.start_button.config(state='normal'); self.status.set('Đã hủy: chuyển sang cửa sổ đích và nhấn F6.'); return
         engine_class=once_engine.OnceEngine if script_mode=='Một lần' else engine.Engine
-        self.engine=engine_class(rules,hwnd,False,lambda k,v:self.messages.put((k,v))); self.engine.start(); self.log('Cửa sổ đích: ' + win.window_title(hwnd) + ' · GỬI THAO TÁC THẬT'); self.log('Đã bắt đầu. Các chỉnh sửa mới chỉ áp dụng cho lần chạy sau.')
+        self.engine=engine_class(rules,hwnd,False,lambda k,v:self.messages.put((k,v))); self.engine.start(); self.pause_button.config(state='normal', text='Tạm dừng · F7'); self.log('Cửa sổ đích: ' + win.window_title(hwnd)); self.log('Đã bắt đầu. Các chỉnh sửa mới chỉ áp dụng cho lần chạy sau.')
     def toggle_pause(self):
         if self.pending:
             self.log('F7 khả dụng sau khi bắt đầu; F8 để dừng.')
@@ -674,11 +716,11 @@ class App(tk.Tk):
                 self.status.set('Hãy trở về cửa sổ đích rồi nhấn F7 để tiếp tục.')
                 self.log('Chưa tiếp tục: cửa sổ đích không ở phía trước.')
                 return
-            self.engine.resume()
+            self.engine.resume(); self.pause_button.config(text='Tạm dừng · F7')
             self.status.set('Đang tiếp tục. F7 tạm dừng · F8 dừng hẳn.')
             self.log('F7: tiếp tục từ thao tác còn lại.')
         else:
-            self.engine.pause()
+            self.engine.pause(); self.pause_button.config(text='Tiếp tục · F7')
             self.status.set('Tạm dừng: lần nhấn/giữ đang diễn ra sẽ kết thúc trước khi nghỉ.')
             self.log('F7: yêu cầu tạm dừng; đợi nhả lần nhấn/giữ đang diễn ra.')
     def stop(self):
@@ -704,11 +746,11 @@ class App(tk.Tk):
                 elif kind=='log':
                     # Keep errors/interruptions visible even with detailed diagnostics hidden.
                     important=('LỖI', 'CẢNH BÁO', 'FOCUS', 'Chuỗi bị ngắt')
-                    if self.detailed_log.get() or any(word in msg for word in important): self.log(msg)
+                    if any(word in msg for word in important): self.log(msg)
                 else: self.log(msg)
         except queue.Empty: pass
         if self.engine and not self.engine.alive() and not self.pending:
-            self.start_button.config(state='normal')
+            self.start_button.config(state='normal'); self.pause_button.config(state='disabled', text='Tạm dừng · F7')
         self.tick_job = self.after(30,self.tick)
     def close(self):
         if self.engine: self.engine.stop()

@@ -70,7 +70,7 @@ class UITests(unittest.TestCase):
     def test_location_is_remembered_and_script_is_separate(self):
         r=self.root;d=self.base/'other';d.mkdir();self.add_action();r.vars['hold'].set('750');self.update()
         with patch.object(self.app.filedialog,'askdirectory',return_value=str(d)):r.choose_preferences_directory()
-        self.assertTrue((d/'MacroVision-defaults.json').exists());self.assertTrue((self.base/'MacroVision-location.json').exists())
+        self.assertTrue((d/'MacroVision-defaults.json').exists());self.assertTrue((self.base/'settings.json').exists())
         self.restart();self.assertEqual(self.root.preferences['action']['hold'],750);self.assertEqual(self.root.flows,[])
         self.assertEqual(self.root.preference_store.path,d/'MacroVision-defaults.json')
     def test_script_only_saved_by_button_not_auto_saved(self):
