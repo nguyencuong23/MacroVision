@@ -2,6 +2,7 @@
 import base64
 import copy
 import json
+import math
 import os
 import queue
 import re
@@ -582,7 +583,7 @@ class App(tk.Tk):
         if c is None: return
         self.withdraw(); self.after(500, lambda:self._region_overlay(c))
     def screenshot_overlay(self):
-        with mss.mss() as s:
+        with mss.MSS() as s:
             mon = s.monitors[1]; screen = np.array(s.grab(mon))[:,:,:3].copy()
         overlay = tk.Toplevel(self); overlay.overrideredirect(True); overlay.attributes('-topmost', True)
         overlay.geometry(f"{mon['width']}x{mon['height']}+{mon['left']}+{mon['top']}")
@@ -592,8 +593,22 @@ class App(tk.Tk):
     def _region_overlay(self, c):
         try:
             mon, screen, over, canvas = self.screenshot_overlay()
-            canvas.create_text(12,12,anchor='nw',text='Kéo chọn vùng · Esc hủy',fill='red',font=('Segoe UI',16,'bold'))
-            start=[0,0]; rect=[None]
+            hint = 'Kéo chọn vùng · Esc hủy'
+            hint_panel=tk.Canvas(over,bg='#111111',highlightthickness=0,bd=0,cursor='hand2')
+            label=hint_panel.create_text(12,12,text=hint,fill='white',font=('Segoe UI',16,'bold'),anchor='w')
+            bounds=hint_panel.bbox(label); width=bounds[2]-bounds[0]+24; height=bounds[3]-bounds[1]+18
+            x=y=0; right,bottom=width,height; radius=6
+            points=tuple((cx+radius*math.cos(a),cy+radius*math.sin(a)) for cx,cy,start_angle in ((right-radius,y+radius,-math.pi/2),(right-radius,bottom-radius,0),(x+radius,bottom-radius,math.pi/2),(x+radius,y+radius,math.pi)) for a in (start_angle+i*math.pi/16 for i in range(9)))
+            hint_panel.create_polygon(*(v for point in points for v in point),fill='#111111',outline='white',width=2)
+            hint_panel.coords(label,12,height/2); hint_panel.tag_raise(label)
+            hint_panel.configure(width=width,height=height); hint_panel.place(x=12,y=12)
+            hint_drag=[None]; start=[0,0]; rect=[None]
+            def start_hint_drag(e):
+                hint_drag[:] = [e.x_root,e.y_root,12,12]
+            def drag_hint(e):
+                hint_panel.place(x=hint_drag[2]+e.x_root-hint_drag[0],y=hint_drag[3]+e.y_root-hint_drag[1])
+                return 'break'
+            def stop_hint_drag(e): hint_drag[0]=None; return 'break'
             def down(e):
                 start[:] = [e.x,e.y]
                 if rect[0]: canvas.delete(rect[0])
@@ -608,6 +623,7 @@ class App(tk.Tk):
                 c['region']={'left':int(mon['left']+x1),'top':int(mon['top']+y1),'width':int(x2-x1),'height':int(y2-y1)}
                 c['template']=screen[y1:y2,x1:x2].copy(); c['mask']=None
                 cancel(); self.refresh_tree(c['id']); self.after(100, lambda:self._mask_for(c))
+            hint_panel.bind('<ButtonPress-1>',start_hint_drag); hint_panel.bind('<B1-Motion>',drag_hint); hint_panel.bind('<ButtonRelease-1>',stop_hint_drag)
             canvas.bind('<ButtonPress-1>',down); canvas.bind('<B1-Motion>',move); canvas.bind('<ButtonRelease-1>',up); over.bind('<Escape>',cancel); over.focus_force()
         except Exception as e: self.deiconify(); messagebox.showerror('Chụp màn hình',str(e))
     def edit_mask(self):
@@ -764,4 +780,9 @@ class App(tk.Tk):
 
 if __name__=='__main__':
     if os.name!='nt': print('Ứng dụng chỉ hỗ trợ Windows.'); raise SystemExit(1)
-    win.dpi_aware(); App().mainloop()
+    win.dpi_aware(); app=App()
+    try: app.mainloop()
+    except KeyboardInterrupt:
+        if app.engine:
+            app.engine.stop(); app.engine.action_thread.join(timeout=1)
+        app.destroy()

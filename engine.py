@@ -419,7 +419,7 @@ class Engine:
     def execute(self):
         last_status=0.
         try:
-            with mss.mss() as s:
+            with mss.MSS() as s:
                 while not self.stop_event.is_set():
                     if not wait_unpaused(self.stop_event,self.pause_event):break
                     idx,status=self.scan(s)

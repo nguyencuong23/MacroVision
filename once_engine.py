@@ -65,7 +65,7 @@ class OnceEngine(engine.Engine):
 
     def execute(self):
         try:
-            with mss.mss() as s:
+            with mss.MSS() as s:
                 for flow_index,flow in enumerate(self.flow_rules):
                     flow_name=flow[0][0]
                     for _,cond in flow:
