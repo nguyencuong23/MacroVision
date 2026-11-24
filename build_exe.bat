@@ -20,7 +20,7 @@ if not exist ".venv\Scripts\python.exe" (
 )
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 goto error
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --name MacroVision app.py
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --onefile --windowed --icon icon.ico --add-data "icon.ico;." --name MacroVision app.py
 if errorlevel 1 goto error
 echo.
 echo Build complete: %CD%\dist\MacroVision.exe

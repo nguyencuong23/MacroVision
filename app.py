@@ -5,9 +5,11 @@ import json
 import os
 import queue
 import re
+import sys
 import threading
 import time
 import uuid
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -24,6 +26,8 @@ from mask_editor import MaskEditor, photo
 
 
 def new_id(): return uuid.uuid4().hex
+
+def app_resource(name): return Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent)) / name
 
 def new_condition():
     return {'id': new_id(), 'name': 'Điều kiện mới', 'region': None, 'template': None, 'mask': None,
@@ -74,6 +78,7 @@ class App(tk.Tk):
     def __init__(self, prompt_on_start=True):
         super().__init__()
         self.title('Macro Vision'); self.geometry('1100x760'); self.minsize(940, 650)
+        if os.name == 'nt': self.iconbitmap(default=str(app_resource('icon.ico')))
         self.update_idletasks()
         self.geometry(f'+{(self.winfo_screenwidth() - 1100) // 2}+{(self.winfo_screenheight() - 760) // 2}')
         self.script_mode='Lặp lại'
@@ -107,7 +112,6 @@ class App(tk.Tk):
         self.display_label.pack(side='left')
         self.display_label.bind('<Enter>', lambda e: self.post_display_menu())
         self.display_label.bind('<Button-1>', lambda e: self.post_display_menu())
-        ttk.Button(top, text='Cài đặt', command=self.show_settings).pack(side='right')
         ttk.Separator(self, orient='horizontal').pack(fill='x')
         outer = ttk.Panedwindow(self, orient='horizontal'); outer.pack(fill='both', expand=True, padx=8)
         left = ttk.Frame(outer, padding=5); right = ttk.Frame(outer, padding=8); outer.add(left, weight=2); outer.add(right, weight=3)
@@ -143,6 +147,7 @@ class App(tk.Tk):
         self.tick_job = self.after(30, self.tick)
         self.update_storage_status()
         if self.preferences_error: self.log('LỖI THIẾT LẬP: ' + self.preferences_error)
+        elif self.preference_store and self.preference_store.recovered_settings: self.log('settings.json cũ không đọc được; đã lưu bản cũ tại ' + str(self.preference_store.recovered_settings) + ' và tạo thiết lập mới.')
 
     def refresh_display_menu(self):
         self.display_menu.delete(0, 'end')
@@ -167,7 +172,7 @@ class App(tk.Tk):
         self.logbox.config(state='normal'); self.logbox.insert('end', msg + '\n'); self.logbox.see('end'); self.logbox.config(state='disabled')
     def update_storage_status(self):
         if self.preferences_error:
-            self.autosave_status.set('LỖI thiết lập: ' + self.preferences_error + ' · Chọn lại vị trí lưu thiết lập.')
+            self.autosave_status.set('LỖI thiết lập: ' + self.preferences_error + ' · Kiểm tra quyền ghi tại thư mục ứng dụng.')
         elif self.preference_store:
             self.autosave_status.set('Thiết lập tự lưu: ' + str(self.preference_store.path) + ' · Script lưu riêng bằng nút Lưu script.')
     def cancel_pending_save(self):
@@ -185,33 +190,6 @@ class App(tk.Tk):
             self.preference_store.save(self.preferences); self.preferences_error = None; self.update_storage_status(); return True
         except Exception as e:
             self.preferences_error = str(e); self.update_storage_status(); self.log('LỖI LƯU THIẾT LẬP: ' + str(e)); return False
-    def show_settings(self):
-        window = tk.Toplevel(self); window.title('Cài đặt'); window.transient(self); window.resizable(False, False)
-        body = ttk.Frame(window, padding=12); body.pack(fill='x')
-        ttk.Label(body, text='Vị trí lưu thiết lập').grid(row=0, column=0, sticky='w', padx=(0, 8))
-        path = tk.StringVar(value=str(self.preference_store.path if self.preference_store else prefs_store.application_dir() / prefs_store.DEFAULT_NAME))
-        ttk.Entry(body, textvariable=path, width=58, state='readonly').grid(row=0, column=1, sticky='ew')
-        ttk.Button(body, text='Duyệt', command=lambda: self.choose_preferences_directory(path)).grid(row=0, column=2, padx=(8, 0))
-        window.update_idletasks()
-        x = (window.winfo_screenwidth() - window.winfo_width()) // 2
-        y = (window.winfo_screenheight() - window.winfo_height()) // 2
-        window.geometry(f'+{x}+{y}')
-    def choose_preferences_directory(self, path_var=None):
-        current = self.preference_store.directory if self.preference_store else prefs_store.application_dir()
-        directory = filedialog.askdirectory(title='Chọn thư mục tự lưu thiết lập mặc định', initialdir=str(current))
-        if not directory: return
-        try:
-            store = self.preference_store or prefs_store.PreferencesStore.__new__(prefs_store.PreferencesStore)
-            if self.preference_store is None:
-                store.base = prefs_store.application_dir(); store.settings_file = store.base / prefs_store.SETTINGS_NAME; store.directory = store.base; store.show_log = self.show_log
-            target = os.path.join(directory, prefs_store.DEFAULT_NAME)
-            if os.path.exists(target) and os.path.normcase(os.path.abspath(target)) != os.path.normcase(os.path.abspath(store.path)):
-                if not messagebox.askyesno('Thiết lập đã tồn tại', 'File thiết lập trong thư mục này đã tồn tại. Thay bằng thiết lập hiện tại?'): return
-            self.cancel_pending_save(); store.relocate(directory, self.preferences); self.preference_store = store
-            if path_var: path_var.set(str(store.path))
-            self.preferences_error = None; self.update_storage_status(); self.log('Đã đổi thư mục lưu thiết lập: ' + str(store.path))
-        except Exception as e:
-            self.preferences_error = str(e); self.update_storage_status(); messagebox.showerror('Không thể đổi vị trí thiết lập',str(e))
     def schedule_save(self):
         # Script never autosaves: defaults are persisted independently.
         self.dirty = True

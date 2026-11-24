@@ -38,7 +38,7 @@ class UITests(unittest.TestCase):
         self.add_action();r=self.root
         r.vars['type'].set('Chuột trái');r.vars['mouse_mode'].set('Nhấn tại con trỏ hiện tại');r.vars['hold'].set('500');self.update()
         r.after(750,r.quit);r.mainloop()
-        with open(self.base/'MacroVision-defaults.json',encoding='utf8') as f:d=json.load(f)
+        with open(self.base/'settings.json',encoding='utf8') as f:d=json.load(f)
         self.assertEqual(d['preferences']['action']['hold'],500);self.assertNotIn('flows',d)
         self.restart();r=self.root;self.assertEqual(r.flows,[])
         self.add_action();self.assertEqual(r.selected[3]['hold'],500);self.assertEqual(r.selected[3]['type'],'Chuột trái')
@@ -67,12 +67,11 @@ class UITests(unittest.TestCase):
         a=self.app.new_action();a.pop('after_delay');c=self.app.new_condition();c['actions']=[a]
         f={'id':'flow','name':'L','conditions':[c]};loaded=self.app.deserialize(self.app.serialize([f]))
         self.assertEqual(loaded[0]['conditions'][0]['actions'][0]['after_delay'],0)
-    def test_location_is_remembered_and_script_is_separate(self):
-        r=self.root;d=self.base/'other';d.mkdir();self.add_action();r.vars['hold'].set('750');self.update()
-        with patch.object(self.app.filedialog,'askdirectory',return_value=str(d)):r.choose_preferences_directory()
-        self.assertTrue((d/'MacroVision-defaults.json').exists());self.assertTrue((self.base/'settings.json').exists())
+    def test_settings_are_kept_beside_app_and_script_is_separate(self):
+        r=self.root;self.add_action();r.vars['hold'].set('750');self.update();r.after(750,r.quit);r.mainloop()
+        self.assertTrue((self.base/'settings.json').exists());self.assertFalse((self.base/'MacroVision-defaults.json').exists())
         self.restart();self.assertEqual(self.root.preferences['action']['hold'],750);self.assertEqual(self.root.flows,[])
-        self.assertEqual(self.root.preference_store.path,d/'MacroVision-defaults.json')
+        self.assertEqual(self.root.preference_store.path,self.base/'settings.json')
     def test_script_only_saved_by_button_not_auto_saved(self):
         r=self.root;r.add_flow();self.update();p=self.base/'script.json'
         with patch.object(self.app.filedialog,'asksaveasfilename',return_value=str(p)):r.save_script()
@@ -95,7 +94,7 @@ class UITests(unittest.TestCase):
         with patch.object(self.app.messagebox,'showerror'):r.tree.selection_set(flow);self.update()
         self.assertEqual(r.selected[2]['id'],cond);self.assertEqual(r.selected[2]['stable'],250)
     def test_reserved_preferences_cannot_be_overwritten_as_script(self):
-        r=self.root;r.add_flow();self.update();path=str(self.base/'MacroVision-defaults.json')
+        r=self.root;r.add_flow();self.update();path=str(self.base/'settings.json')
         with patch.object(self.app.filedialog,'asksaveasfilename',return_value=path),patch.object(self.app.messagebox,'showerror') as err:r.save_script();err.assert_called_once()
         self.assertFalse(os.path.exists(path))
     def test_priority_hotkeys_edge_trigger(self):

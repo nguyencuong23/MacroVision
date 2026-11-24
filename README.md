@@ -107,8 +107,7 @@ Bản này thực hiện tìm hình rồi xét ổn định theo hai giai đoạ
 ## Ghi nhớ thiết lập và lưu script
 
 - Không còn thông báo chọn nơi lưu khi mở app. Những giá trị hợp lệ vừa chỉnh trong biểu mẫu điều kiện/thao tác được ghi nhớ để dùng khi tạo điều kiện/thao tác mới, kể cả sau khi đóng và mở lại.
-- Mặc định app tự ghi **`MacroVision-defaults.json` cạnh `MacroVision.exe`**. Khi chạy mã nguồn bằng Python, file này nằm cạnh `app.py`. File này chỉ chứa các giá trị mặc định biểu mẫu, **không chứa script, ảnh mẫu hay mặt nạ**.
-- Choose the defaults folder in Settings. `settings.json` beside the app stores that folder and whether the log is shown. Defaults remain in `MacroVision-defaults.json` inside the chosen folder. The old `MacroVision-location.json` file is migrated to `settings.json` and removed.
+- App tự ghi **`settings.json` cạnh `MacroVision.exe`**. Khi chạy mã nguồn bằng Python, file này nằm cạnh `app.py`. File chứa giá trị mặc định biểu mẫu và tùy chọn hiển thị nhật ký; script, ảnh mẫu và mặt nạ vẫn được lưu riêng. Nếu `settings.json` không đọc được, app giữ bản cũ với đuôi `.invalid` và tạo file thiết lập mới.
 - **Script là phần riêng:** dùng **Mở script** để mở và **Lưu script** để chủ động chọn file và lưu. Bản sửa này **không tự lưu script** sau khi chỉnh sửa; nhớ bấm Lưu script trước khi thoát. App hỏi nếu chuẩn bị bỏ các thay đổi script chưa lưu. File script cũ mở được; defaults nhúng trong file script cũ không tự thay defaults toàn ứng dụng.
 - App không tự đọc, ghi hay xóa phiên cũ tại `%LOCALAPPDATA%\MacroVision\session.json`. Nếu cần, bạn có thể tự mở phiên cũ đó, rồi lưu script sang file khác.
 - Khi ghi JSON an toàn, app tạo file tạm trong cùng thư mục rồi thay file đích. Thay đổi chưa hợp lệ không được ghi nhớ; sửa trường sai trước khi chuyển mục/chạy.
@@ -132,4 +131,4 @@ Chưa build hoặc chạy thử thực tế trên Windows/game. EXE một file c
 
 `python -m unittest discover -s tests -v`
 
-Đã chạy 192 bài kiểm thử logic/giao diện trên Linux/Xvfb, gồm thứ tự quét, không có hàng đợi, chờ ổn định và hết hạn, không ngắt chuỗi, chế độ Một lần/Lặp, chống kích hoạt lại chập chờn, ghi log chẩn đoán, chờ sau thao tác, F7/F8 khi chờ, lưu defaults riêng và mở script cũ. Chưa kiểm thử Windows, DPI, input thật hoặc game.
+Đã chạy 192 bài kiểm thử logic/giao diện trên Linux/Xvfb, gồm thứ tự quét, không có hàng đợi, chờ ổn định và hết hạn, không ngắt chuỗi, chế độ Một lần/Lặp, chống kích hoạt lại chập chờn, ghi log chẩn đoán, chờ sau thao tác, F7/F8 khi chờ, lưu defaults trong `settings.json` và mở script cũ. Chưa kiểm thử Windows, DPI, input thật hoặc game.

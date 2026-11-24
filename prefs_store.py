@@ -1,13 +1,12 @@
-"""Last-used form defaults, kept independently of scripts."""
+"""Application settings and last-used form defaults."""
 import json
 import os
 import sys
 from pathlib import Path
 import form_model
 
-DEFAULT_NAME = 'MacroVision-defaults.json'
-LOCATION_NAME = 'MacroVision-location.json'
 SETTINGS_NAME = 'settings.json'
+LEGACY_DEFAULT_NAME = 'MacroVision-defaults.json'
 
 def application_dir():
     return Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
@@ -27,44 +26,45 @@ def checked_preferences(value):
 class PreferencesStore:
     def __init__(self, base=None):
         self.base = Path(base) if base is not None else application_dir()
-        self.location_file = self.base / LOCATION_NAME
         self.settings_file = self.base / SETTINGS_NAME
         self.directory = self.base
         self.show_log = False
+        self.preferences = {'condition': {}, 'action': {}}
+        self.recovered_settings = None
         if self.settings_file.exists():
-            with open(self.settings_file,encoding='utf-8') as f: info=json.load(f)
-            if info.get('kind') != 'MacroVision-settings' or info.get('version') != 1 or not os.path.isabs(info.get('directory','')) or not isinstance(info.get('show_log',False), bool):
-                raise ValueError('File thiết lập không hợp lệ: ' + str(self.settings_file))
-            self.directory = Path(info['directory'])
-            self.show_log = info.get('show_log', False)
-        elif self.location_file.exists():
-            with open(self.location_file,encoding='utf-8') as f: info=json.load(f)
-            if info.get('kind') != 'MacroVision-defaults-location' or info.get('version') != 1 or not os.path.isabs(info.get('directory','')):
-                raise ValueError('File vị trí thiết lập không hợp lệ: ' + str(self.location_file))
-            self.directory = Path(info['directory'])
+            try:
+                with open(self.settings_file,encoding='utf-8') as f: info=json.load(f)
+                if info.get('kind') != 'MacroVision-settings' or info.get('version') != 1 or not os.path.isabs(info.get('directory',str(self.base))) or not isinstance(info.get('show_log',False), bool):
+                    raise ValueError('File thiết lập không hợp lệ: ' + str(self.settings_file))
+                self.show_log = info.get('show_log', False)
+                self.preferences = checked_preferences(info.get('preferences', {'condition': {}, 'action': {}}))
+                old_directory = Path(info.get('directory', self.base))
+            except (OSError, UnicodeError, ValueError, TypeError, AttributeError):
+                backup = self.settings_file.with_name(self.settings_file.name + '.invalid')
+                suffix = 1
+                while backup.exists():
+                    backup = self.settings_file.with_name(self.settings_file.name + f'.invalid.{suffix}')
+                    suffix += 1
+                self.settings_file.replace(backup)
+                self.recovered_settings = backup
+                self.save_settings()
+                return
+        else:
+            old_directory = self.base
+        legacy_file = old_directory / LEGACY_DEFAULT_NAME
+        if legacy_file.is_file():
+            with open(legacy_file, encoding='utf-8') as f: legacy=json.load(f)
+            if legacy.get('kind') != 'MacroVision-defaults' or legacy.get('version') != 1:
+                raise ValueError('File thiết lập cũ không hợp lệ: ' + str(legacy_file))
+            if not self.preferences['condition'] and not self.preferences['action']:
+                self.preferences = checked_preferences(legacy.get('preferences'))
             self.save_settings()
-            self.location_file.unlink()
+            legacy_file.unlink()
     @property
-    def path(self): return self.directory / DEFAULT_NAME
-    def load(self):
-        if not self.path.exists(): return {'condition': {}, 'action': {}}
-        with open(self.path,encoding='utf-8') as f: data=json.load(f)
-        if data.get('kind') != 'MacroVision-defaults' or data.get('version') != 1:
-            raise ValueError('File thiết lập không hợp lệ: ' + str(self.path))
-        return checked_preferences(data.get('preferences'))
+    def path(self): return self.settings_file
+    def load(self): return self.preferences
     def save(self, preferences):
-        # Never overwrite an unrelated file accidentally using this reserved name.
-        if self.path.exists(): self.load()
-        form_model.atomic_json(self.path,{'kind':'MacroVision-defaults','version':1,'preferences':checked_preferences(preferences)})
+        self.preferences = checked_preferences(preferences)
+        self.save_settings()
     def save_settings(self):
-        form_model.atomic_json(self.settings_file,{'kind':'MacroVision-settings','version':1,'directory':str(self.directory),'show_log':self.show_log})
-    def relocate(self, directory, preferences):
-        destination=Path(directory).resolve()
-        if not destination.is_dir(): raise ValueError('Thư mục không tồn tại.')
-        old=self.directory; self.directory=destination
-        try:
-            self.save(preferences)
-            self.save_settings()
-        except Exception:
-            self.directory=old
-            raise
+        form_model.atomic_json(self.settings_file,{'kind':'MacroVision-settings','version':1,'directory':str(self.directory),'show_log':self.show_log,'preferences':self.preferences})
